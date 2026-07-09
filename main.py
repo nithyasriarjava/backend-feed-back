@@ -36,6 +36,9 @@ def get_current_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 # --- ENDPOINTS ---
+@app.get("/")
+def read_root():
+    return {"message": "Backend is running successfully!"}
 
 @app.post("/auth/signup")
 def signup(user: schemas.AuthData, db: Session = Depends(get_db)):
