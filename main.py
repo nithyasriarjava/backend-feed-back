@@ -64,16 +64,17 @@ def login(user: schemas.AuthData, db: Session = Depends(get_db)):
     token = jwt.encode({"sub": user.email}, JWT_SECRET, algorithm="HS256")
     return {"token": token}
 
+# --- Feedback Endpoint Fixed ---
 @app.post("/feedback")
 def create_feedback(
     feedback: schemas.FeedbackCreate, 
     background_tasks: BackgroundTasks, 
     db: Session = Depends(get_db),
-    user_id: str = Depends(get_current_user)
+    user_email: str = Depends(get_current_user) # JWT-la irunthu email varum
 ):
-    # 1. Create DB entry with "pending" status
+    # 'user_email' variable ippo TiDB user-ai point pannum
     new_feedback = models.Feedback(
-        supabase_user_id=user_id,
+        user_email=user_email, # Munaadi iruntha supabase_user_id-ku pathila
         text=feedback.text,
         status=models.StatusEnum.pending
     )
@@ -81,11 +82,10 @@ def create_feedback(
     db.commit()
     db.refresh(new_feedback)
 
-    # 2. Trigger the AI task in the background using a fresh DB session
+    # Background task-kku anuppuvom
     bg_db_session = SessionLocal()
     background_tasks.add_task(process_feedback_with_ai, new_feedback.id, feedback.text, bg_db_session)
 
-    # 3. Return immediately! (Assignment requirement met here)
     return {"id": new_feedback.id, "text": new_feedback.text, "status": new_feedback.status.value}
 
 @app.get("/feedback", response_model=List[schemas.FeedbackResponse])
