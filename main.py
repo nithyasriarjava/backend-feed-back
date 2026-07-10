@@ -9,10 +9,23 @@ from database import engine, get_db, SessionLocal
 import models
 import schemas
 from gemini_service import process_feedback_with_ai
+from fastapi.middleware.cors import CORSMiddleware
 
 # Initialize app and DB
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Enforce JWT_SECRET configuration for security
@@ -34,6 +47,7 @@ def get_current_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
 
 # --- ENDPOINTS ---
 @app.get("/")
