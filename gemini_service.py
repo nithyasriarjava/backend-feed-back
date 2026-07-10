@@ -30,7 +30,8 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
         # Debug: Available Models
         print("===== AVAILABLE MODELS =====")
         for m in genai.list_models():
-            print(m.name)
+            if "generateContent" in m.supported_generation_methods:
+                    print(m.name)
         print("============================")
 
         # Create Gemini Model
