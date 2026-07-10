@@ -19,7 +19,7 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
     feedback = None
 
     try:
-        # Get feedback from database
+        # Fetch feedback from database
         feedback = db.query(models.Feedback).filter(
             models.Feedback.id == feedback_id
         ).first()
@@ -30,11 +30,11 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
         prompt = f"""
 You are an AI Feedback Classifier.
 
-Analyze the feedback and return ONLY valid JSON.
+Analyze the following feedback and return ONLY valid JSON.
 
-Do NOT return markdown.
-Do NOT return explanation.
-Do NOT return extra text.
+Do not return markdown.
+Do not return explanation.
+Do not return any extra text.
 
 Feedback:
 {text}
@@ -42,25 +42,25 @@ Feedback:
 Return exactly this JSON:
 
 {{
-  "category":"bug",
-  "sentiment":"positive",
-  "summary":"one line summary"
+    "category": "bug",
+    "sentiment": "positive",
+    "summary": "one line summary"
 }}
 
-Category must be one of:
-bug
-feature_request
-complaint
-praise
+Allowed category values:
+- bug
+- feature_request
+- complaint
+- praise
 
-Sentiment must be one of:
-positive
-neutral
-negative
+Allowed sentiment values:
+- positive
+- neutral
+- negative
 """
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             temperature=0,
             response_format={"type": "json_object"},
             messages=[
@@ -71,7 +71,7 @@ negative
             ]
         )
 
-        ai_text = response.choices[0].message.content.strip()
+        ai_text = response.choices[0].message.content
 
         print("========== GROQ RESPONSE ==========")
         print(ai_text)
@@ -79,11 +79,9 @@ negative
 
         result = json.loads(ai_text)
 
-        category = result.get("category", "").strip().lower()
+        category = result.get("category", "").strip().lower().replace(" ", "_")
         sentiment = result.get("sentiment", "").strip().lower()
         summary = result.get("summary", "").strip()
-
-        category = category.replace(" ", "_")
 
         valid_categories = [
             "bug",
@@ -99,10 +97,10 @@ negative
         ]
 
         if category not in valid_categories:
-            raise ValueError(f"Invalid category received: {category}")
+            raise ValueError(f"Invalid category: {category}")
 
         if sentiment not in valid_sentiments:
-            raise ValueError(f"Invalid sentiment received: {sentiment}")
+            raise ValueError(f"Invalid sentiment: {sentiment}")
 
         feedback.category = models.CategoryEnum(category)
         feedback.sentiment = models.SentimentEnum(sentiment)
@@ -113,7 +111,7 @@ negative
         db.commit()
         db.refresh(feedback)
 
-        print("Feedback Updated Successfully")
+        print("Feedback processed successfully.")
 
     except Exception as e:
 
