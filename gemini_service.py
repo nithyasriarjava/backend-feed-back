@@ -1,25 +1,25 @@
 import os
 import json
-import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions
 from dotenv import load_dotenv
+from groq import Groq
 import models
 
 # Load environment variables
 load_dotenv()
 
-API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY = os.getenv("GROQ_API_KEY")
 
 if not API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable not set.")
+    raise ValueError("GROQ_API_KEY environment variable not set.")
 
-genai.configure(api_key=API_KEY)
+client = Groq(api_key=API_KEY)
 
 
 def process_feedback_with_ai(feedback_id: int, text: str, db):
     feedback = None
 
     try:
+        # Get feedback from database
         feedback = db.query(models.Feedback).filter(
             models.Feedback.id == feedback_id
         ).first()
@@ -27,25 +27,10 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
         if not feedback:
             return
 
-        # Debug: Available Models
-        print("===== AVAILABLE MODELS =====")
-        for m in genai.list_models():
-            if "generateContent" in m.supported_generation_methods:
-                    print(m.name)
-        print("============================")
-
-        # Create Gemini Model
-        model = genai.GenerativeModel(
-            "gemini-2.0-flash",
-            generation_config=genai.types.GenerationConfig(
-                response_mime_type="application/json"
-            )
-        )
-
         prompt = f"""
 You are an AI Feedback Classifier.
 
-Return ONLY valid JSON.
+Analyze the feedback and return ONLY valid JSON.
 
 Do NOT return markdown.
 Do NOT return explanation.
@@ -57,37 +42,40 @@ Feedback:
 Return exactly this JSON:
 
 {{
-    "category":"bug",
-    "sentiment":"positive",
-    "summary":"one line summary"
+  "category":"bug",
+  "sentiment":"positive",
+  "summary":"one line summary"
 }}
 
-Valid category values:
+Category must be one of:
 bug
 feature_request
 complaint
 praise
 
-Valid sentiment values:
+Sentiment must be one of:
 positive
 neutral
 negative
 """
 
-        response = model.generate_content(
-            prompt,
-            request_options={"timeout": 60}
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
         )
 
-        print("===== GEMINI RESPONSE =====")
-        print(response.text)
-        print("===========================")
+        ai_text = response.choices[0].message.content.strip()
 
-        ai_text = response.text.strip()
-
-        ai_text = ai_text.replace("```json", "")
-        ai_text = ai_text.replace("```", "")
-        ai_text = ai_text.strip()
+        print("========== GROQ RESPONSE ==========")
+        print(ai_text)
+        print("===================================")
 
         result = json.loads(ai_text)
 
@@ -127,26 +115,13 @@ negative
 
         print("Feedback Updated Successfully")
 
-    except (
-        google_exceptions.GoogleAPICallError,
-        json.JSONDecodeError,
-        ValueError
-    ) as e:
-
-        print("AI ERROR:", e)
-
-        if feedback:
-            feedback.status = models.StatusEnum.failed
-            feedback.error_message = f"{type(e).__name__}: {str(e)}"
-            db.commit()
-
     except Exception as e:
 
-        print("UNEXPECTED ERROR:", e)
+        print("AI ERROR:", str(e))
 
         if feedback:
             feedback.status = models.StatusEnum.failed
-            feedback.error_message = f"{type(e).__name__}: {str(e)}"
+            feedback.error_message = str(e)
             db.commit()
 
     finally:
