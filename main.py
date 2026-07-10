@@ -1,6 +1,8 @@
 import os
 import jwt
-from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Header, Query
+
+from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from typing import List
@@ -9,10 +11,14 @@ from database import engine, get_db, SessionLocal
 import models
 import schemas
 from gemini_service import process_feedback_with_ai
-from fastapi.middleware.cors import CORSMiddleware
 
-# Initialize app and DB
+
+# ==============================
+# Initialize App & Database
+# ==============================
+
 models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
 
 app.add_middleware(
@@ -20,68 +26,143 @@ app.add_middleware(
     allow_origins=[
         "https://feed-back123.netlify.app",
         "http://localhost:3000",
-        "http://localhost:5173"
+        "http://localhost:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto"
+)
 
-# Enforce JWT_SECRET configuration for security
 JWT_SECRET = os.getenv("JWT_SECRET")
+
 if not JWT_SECRET:
-    raise ValueError("JWT_SECRET environment variable not set. This is required for security.")
+    raise ValueError(
+        "JWT_SECRET environment variable not set."
+    )
 
-# --- AUTH DEPENDENCY ---
-def get_current_user(authorization: str = Header(None)):
+
+# ==============================
+# JWT Authentication
+# ==============================
+
+def get_current_user(
+    authorization: str = Header(None)
+):
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid token")
-    
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid token"
+        )
+
     token = authorization.split(" ")[1]
+
     try:
-        # Decode the token to get the user email/ID
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        return payload.get("sub") 
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=["HS256"]
+        )
+
+        return payload.get("sub")
+
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(
+            status_code=401,
+            detail="Token expired"
+        )
+
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
 
 
-# --- ENDPOINTS ---
+# ==============================
+# Root
+# ==============================
+
 @app.get("/")
 def read_root():
-    return {"message": "Backend is running successfully!"}
+    return {
+        "message": "Backend is running successfully!"
+    }
+
+
+# ==============================
+# Signup
+# ==============================
 
 @app.post("/auth/signup")
-def signup(user: schemas.AuthData, db: Session = Depends(get_db)):
-    # Check if user already exists
-    existing_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    hashed_password = pwd_context.hash(user.password)
-    db_user = models.User(email=user.email, password=hashed_password)
-    db.add(db_user)
-    db.commit()
-    return {"message": "User created successfully"}
-
-@app.get("/auth/login")
-def login(
-    email: str = Query(...),
-    password: str = Query(...),
+def signup(
+    user: schemas.AuthData,
     db: Session = Depends(get_db)
 ):
+    existing_user = db.query(models.User).filter(
+        models.User.email == user.email
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+
+    hashed_password = pwd_context.hash(user.password)
+
+    db_user = models.User(
+        email=user.email,
+        password=hashed_password
+    )
+
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    token = jwt.encode(
+        {"sub": db_user.email},
+        JWT_SECRET,
+        algorithm="HS256"
+    )
+
+    return {
+        "token": token
+    }
+
+
+# ==============================
+# Login
+# ==============================
+
+@app.post("/auth/login")
+def login(
+    user: schemas.AuthData,
+    db: Session = Depends(get_db)
+):
+
     db_user = db.query(models.User).filter(
-        models.User.email == email
+        models.User.email == user.email
     ).first()
 
     if not db_user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
 
-    if not pwd_context.verify(password, db_user.password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not pwd_context.verify(
+        user.password,
+        db_user.password
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password"
+        )
 
     token = jwt.encode(
         {"sub": db_user.email},
@@ -93,37 +174,67 @@ def login(
         "message": "Login successful",
         "token": token
     }
-# --- Feedback Endpoint Fixed ---
+
+
+# ==============================
+# Create Feedback
+# ==============================
+
 @app.post("/feedback")
 def create_feedback(
-    feedback: schemas.FeedbackCreate, 
-    background_tasks: BackgroundTasks, 
+    feedback: schemas.FeedbackCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user_email: str = Depends(get_current_user)
 ):
+
     new_feedback = models.Feedback(
-    user_email=user_email,
-    text=feedback.text,
-    status=models.StatusEnum.pending
-)
+        user_email=user_email,
+        text=feedback.text,
+        status=models.StatusEnum.pending
+    )
+
     db.add(new_feedback)
     db.commit()
     db.refresh(new_feedback)
 
-    # Background task-kku anuppuvom
     bg_db_session = SessionLocal()
-    background_tasks.add_task(process_feedback_with_ai, new_feedback.id, feedback.text, bg_db_session)
 
-    return {"id": new_feedback.id, "text": new_feedback.text, "status": new_feedback.status.value}
+    background_tasks.add_task(
+        process_feedback_with_ai,
+        new_feedback.id,
+        feedback.text,
+        bg_db_session
+    )
 
-@app.get("/feedback", response_model=List[schemas.FeedbackResponse])
+    return {
+        "id": new_feedback.id,
+        "text": new_feedback.text,
+        "status": new_feedback.status.value
+    }
+
+
+# ==============================
+# Get Feedback
+# ==============================
+
+@app.get(
+    "/feedback",
+    response_model=List[schemas.FeedbackResponse]
+)
 def get_feedback(
     db: Session = Depends(get_db),
     user_email: str = Depends(get_current_user)
 ):
+
     return db.query(models.Feedback).filter(
         models.Feedback.user_email == user_email
     ).all()
+
+
+# ==============================
+# Delete Feedback
+# ==============================
 
 @app.delete("/feedback/{id}")
 def delete_feedback(
@@ -131,15 +242,21 @@ def delete_feedback(
     db: Session = Depends(get_db),
     user_email: str = Depends(get_current_user)
 ):
+
     feedback = db.query(models.Feedback).filter(
         models.Feedback.id == id,
         models.Feedback.user_email == user_email
     ).first()
 
     if not feedback:
-        raise HTTPException(status_code=404, detail="Feedback not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Feedback not found"
+        )
 
     db.delete(feedback)
     db.commit()
 
-    return {"message": "Deleted successfully"}
+    return {
+        "message": "Deleted successfully"
+    }
