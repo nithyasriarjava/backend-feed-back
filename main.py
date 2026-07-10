@@ -18,6 +18,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://feed-back123.netlify.app",
         "http://localhost:3000",
         "http://localhost:5173"
     ],
