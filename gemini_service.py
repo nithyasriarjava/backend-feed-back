@@ -20,7 +20,6 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
     feedback = None
 
     try:
-
         feedback = db.query(models.Feedback).filter(
             models.Feedback.id == feedback_id
         ).first()
@@ -28,13 +27,19 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
         if not feedback:
             return
 
-        model = genai.GenerativeModel("gemini-2.5-flash",
+        # Debug: Available Models
+        print("===== AVAILABLE MODELS =====")
+        for m in genai.list_models():
+            print(m.name)
+        print("============================")
+
+        # Create Gemini Model
+        model = genai.GenerativeModel(
+            "gemini-2.5-flash",
             generation_config=genai.types.GenerationConfig(
                 response_mime_type="application/json"
             )
         )
-        for model in genai.list_models():
-                print(model.name)
 
         prompt = f"""
 You are an AI Feedback Classifier.
@@ -48,13 +53,24 @@ Do NOT return extra text.
 Feedback:
 {text}
 
-Return exactly this format:
+Return exactly this JSON:
 
 {{
-    "category":"bug | feature_request | complaint | praise",
-    "sentiment":"positive | neutral | negative",
+    "category":"bug",
+    "sentiment":"positive",
     "summary":"one line summary"
 }}
+
+Valid category values:
+bug
+feature_request
+complaint
+praise
+
+Valid sentiment values:
+positive
+neutral
+negative
 """
 
         response = model.generate_content(
@@ -62,9 +78,9 @@ Return exactly this format:
             request_options={"timeout": 60}
         )
 
-        print("========== GEMINI RESPONSE ==========")
+        print("===== GEMINI RESPONSE =====")
         print(response.text)
-        print("=====================================")
+        print("===========================")
 
         ai_text = response.text.strip()
 
@@ -74,9 +90,9 @@ Return exactly this format:
 
         result = json.loads(ai_text)
 
-        category = str(result.get("category", "")).strip().lower()
-        sentiment = str(result.get("sentiment", "")).strip().lower()
-        summary = str(result.get("summary", "")).strip()
+        category = result.get("category", "").strip().lower()
+        sentiment = result.get("sentiment", "").strip().lower()
+        summary = result.get("summary", "").strip()
 
         category = category.replace(" ", "_")
 
@@ -116,7 +132,7 @@ Return exactly this format:
         ValueError
     ) as e:
 
-        print("AI ERROR:", str(e))
+        print("AI ERROR:", e)
 
         if feedback:
             feedback.status = models.StatusEnum.failed
@@ -125,7 +141,7 @@ Return exactly this format:
 
     except Exception as e:
 
-        print("UNEXPECTED ERROR:", str(e))
+        print("UNEXPECTED ERROR:", e)
 
         if feedback:
             feedback.status = models.StatusEnum.failed
