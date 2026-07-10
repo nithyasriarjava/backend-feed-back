@@ -1,6 +1,6 @@
 import os
 import jwt
-from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Header
+from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, Header, Query
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from typing import List
@@ -52,32 +52,45 @@ def signup(user: schemas.AuthData, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "User created successfully"}
 
-@app.post("/auth/login")
-def login(user: schemas.AuthData, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    # Use a timing-attack-resistant check.
-    # pwd_context.verify will return False for a non-existent user if the hash is None,
-    # but checking for the user first makes the intent clearer and avoids a None hash.
-    if not db_user or not pwd_context.verify(user.password, db_user.password if db_user else ""):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    token = jwt.encode({"sub": user.email}, JWT_SECRET, algorithm="HS256")
-    return {"token": token}
+@app.get("/auth/login")
+def login(
+    email: str = Query(...),
+    password: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    db_user = db.query(models.User).filter(
+        models.User.email == email
+    ).first()
 
+    if not db_user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not pwd_context.verify(password, db_user.password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = jwt.encode(
+        {"sub": db_user.email},
+        JWT_SECRET,
+        algorithm="HS256"
+    )
+
+    return {
+        "message": "Login successful",
+        "token": token
+    }
 # --- Feedback Endpoint Fixed ---
 @app.post("/feedback")
 def create_feedback(
     feedback: schemas.FeedbackCreate, 
     background_tasks: BackgroundTasks, 
     db: Session = Depends(get_db),
-    user_email: str = Depends(get_current_user) # JWT-la irunthu email varum
+    user_email: str = Depends(get_current_user)
 ):
-    # 'user_email' variable ippo TiDB user-ai point pannum
     new_feedback = models.Feedback(
-        user_email=user_email, # Munaadi iruntha supabase_user_id-ku pathila
-        text=feedback.text,
-        status=models.StatusEnum.pending
-    )
+    user_email=user_email,
+    text=feedback.text,
+    status=models.StatusEnum.pending
+)
     db.add(new_feedback)
     db.commit()
     db.refresh(new_feedback)
@@ -89,20 +102,29 @@ def create_feedback(
     return {"id": new_feedback.id, "text": new_feedback.text, "status": new_feedback.status.value}
 
 @app.get("/feedback", response_model=List[schemas.FeedbackResponse])
-def get_feedback(db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
-    # Fetch all feedback for this logged-in user
-    return db.query(models.Feedback).filter(models.Feedback.supabase_user_id == user_id).all()
+def get_feedback(
+    db: Session = Depends(get_db),
+    user_email: str = Depends(get_current_user)
+):
+    return db.query(models.Feedback).filter(
+        models.Feedback.user_email == user_email
+    ).all()
 
 @app.delete("/feedback/{id}")
-def delete_feedback(id: int, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
+def delete_feedback(
+    id: int,
+    db: Session = Depends(get_db),
+    user_email: str = Depends(get_current_user)
+):
     feedback = db.query(models.Feedback).filter(
-        models.Feedback.id == id, 
-        models.Feedback.supabase_user_id == user_id
+        models.Feedback.id == id,
+        models.Feedback.user_email == user_email
     ).first()
-    
+
     if not feedback:
         raise HTTPException(status_code=404, detail="Feedback not found")
-        
+
     db.delete(feedback)
     db.commit()
+
     return {"message": "Deleted successfully"}
