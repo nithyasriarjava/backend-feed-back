@@ -94,6 +94,15 @@ def read_root():
         "message": "Backend is running successfully!"
     }
 
+@app.get("/models")
+def list_models():
+    models_list = []
+
+    for m in genai.list_models():
+        if "generateContent" in m.supported_generation_methods:
+            models_list.append(m.name)
+
+    return models_list
 
 # ==============================
 # Signup
