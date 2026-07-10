@@ -28,12 +28,13 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
         if not feedback:
             return
 
-        model = genai.GenerativeModel(
-            "gemini-1.5-flash",
+        model = genai.GenerativeModel("gemini-2.5-flash",
             generation_config=genai.types.GenerationConfig(
                 response_mime_type="application/json"
             )
         )
+        for model in genai.list_models():
+                print(model.name)
 
         prompt = f"""
 You are an AI Feedback Classifier.
