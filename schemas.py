@@ -1,10 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+
+
 from typing import Optional
 from models import StatusEnum, CategoryEnum, SentimentEnum
 
 # User ulla anupra Auth credentials
 class AuthData(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 # User submit pandra input

@@ -23,8 +23,7 @@ class Feedback(Base):
     __tablename__ = "feedback"
 
     id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
-    supabase_user_id = Column(String(255), nullable=False, index=True)
-    
+    user_email = Column(String, nullable=False)    
     # This is the column name that caused the conflict
     text = Column(Text, nullable=False)
     
