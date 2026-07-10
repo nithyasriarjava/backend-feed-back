@@ -25,6 +25,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://feed-back123.netlify.app",
+        "https://agent-6a5089da833f51a37a0--frontend-feedback.netlify.app",
         "http://localhost:3000",
         "http://localhost:5173",
     ],
