@@ -36,7 +36,7 @@ def process_feedback_with_ai(feedback_id: int, text: str, db):
 
         # Create Gemini Model
         model = genai.GenerativeModel(
-            "gemini-2.5-flash",
+            "gemini-2.0-flash",
             generation_config=genai.types.GenerationConfig(
                 response_mime_type="application/json"
             )
